@@ -27,11 +27,19 @@ enum LinkType {
   RELATED
 }
 
-enum FactorValue {
-  YES
-  NO
+enum FactorCategory {
+  CONDUCT
+  RELATIONSHIP
+  DOCTRINAL
+  INFERENCE_BASIS
+}
+
+enum BadFaithOutcome {
+  CANCELLED
+  REJECTED
+  PARTIAL
+  REMITTED
   UNCLEAR
-  NOT_ADDRESSED
 }
 
 model Decision {
@@ -44,6 +52,7 @@ model Decision {
   url             String?
   decisionType    String?
   outcome         String?
+  badFaithOutcome BadFaithOutcome?
 
   trademarkNumber String?
   trademarkName   String?
@@ -68,6 +77,8 @@ model Decision {
   @@index([trademarkNumber])
 }
 
+// Add relationship between the parties
+
 model Provision {
   id       String @id @default(cuid())
   code     String
@@ -91,9 +102,9 @@ model DecisionProvision {
 }
 
 model Factor {
-  id       String @id @default(cuid())
-  key      String @unique
+  id      String @id
   label    String
+  category  FactorCategory
 
   findings DecisionFactor[]
 }
@@ -101,14 +112,12 @@ model Factor {
 model DecisionFactor {
   decisionId String
   factorId   String
-  value      FactorValue
   evidence   String? @db.Text
 
   decision   Decision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
   factor     Factor   @relation(fields: [factorId], references: [id], onDelete: Cascade)
 
   @@id([decisionId, factorId])
-  @@index([factorId, value])
 }
 
 model DecisionLink {

@@ -290,13 +290,30 @@ async function upsertDecisionFromEntry(
   entry: EuipoEntry,
   context: BrowserContext
 ): Promise<{ id: string; sourceKey: string }> {
+  const existing = await prisma.decision.findUnique({
+    where: { sourceKey: entry.uniqueSolrKey },
+    select: {
+      id: true,
+      sourceKey: true,
+      text: true,
+      textUrl: true,
+      textLanguage: true,
+    },
+  });
+
   const chosen = pickUrl(entry);
 
-  let textUrl: string | null = null;
-  let textLanguage: string | null = null;
-  let text: string | null = null;
+  // Start with whatever is already stored
+  let textUrl: string | null = existing?.textUrl ?? null;
+  let textLanguage: string | null = existing?.textLanguage ?? null;
+  let text: string | null = existing?.text ?? null;
 
-  if (chosen) {
+  const alreadyHasDocument =
+    existing?.text != null && existing.text.trim().length > 0;
+
+  if (alreadyHasDocument) {
+    console.log(`Skipping document fetch for case ${entry.caseNumber} (already in DB)`);
+  } else if (chosen) {
     textUrl = chosen.url;
     textLanguage = chosen.languageCode;
 
@@ -309,16 +326,18 @@ async function upsertDecisionFromEntry(
 
       if (chosen.originalLanguageURL && chosen.originalLanguageURL !== chosen.url) {
         try {
-          text = await downloadDocumentToString(chosen.originalLanguageURL, context, { timeoutMs: 60000 });
+          text = await downloadDocumentToString(chosen.originalLanguageURL, context, {
+            timeoutMs: 60000,
+          });
           textUrl = chosen.originalLanguageURL;
           textLanguage = chosen.originalLanguageCode;
           console.log(`Extracted text from original language for case ${entry.caseNumber}`);
         } catch (err) {
-          throw new Error(`Failed to extract text from both chosen and original language for case ${entry.caseNumber}. Last error: ${err}`);
+          throw new Error(
+            `Failed to extract text from both chosen and original language for case ${entry.caseNumber}. Last error: ${err}`
+          );
         }
       }
-
-
     }
   } else {
     console.warn(`No downloadable document found for case ${entry.caseNumber}`);
@@ -341,8 +360,6 @@ async function upsertDecisionFromEntry(
       textUrl,
       textLanguage,
       text,
-      // factorsProcessed / citationsProcessed remain false by default,
-      // and we do not touch them here.
     },
     create: {
       sourceKey: entry.uniqueSolrKey,
