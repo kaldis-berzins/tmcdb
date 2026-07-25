@@ -6,20 +6,34 @@
   "type": "module",
   "scripts": {
     "migrate": "prisma migrate dev && prisma generate",
-    "studio": "prisma studio"
+    "studio": "prisma studio",
+    "dev": "vite dev",
+    "build": "vite build",
+    "preview": "vite preview",
+    "check": "svelte-check --tsconfig ./tsconfig.json",
+    "check:watch": "svelte-check --tsconfig ./tsconfig.json --watch"
   },
   "author": "Kaldis Berzins",
   "license": "ISC",
   "devDependencies": {
+    "@sveltejs/adapter-auto": "^7.0.1",
+    "@sveltejs/kit": "^2.70.1",
+    "@sveltejs/vite-plugin-svelte": "^7.2.0",
     "@types/node": "^25.6.0",
     "@types/pg": "^8.20.0",
     "prisma": "^7.7.0",
+    "svelte": "^5.56.8",
+    "svelte-check": "^4.7.3",
     "tsx": "^4.21.0",
-    "typescript": "^6.0.2"
+    "typescript": "^6.0.3",
+    "vite": "^8.1.5"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^4.0.20",
+    "@ai-sdk/svelte": "^5.0.37",
     "@prisma/adapter-pg": "^7.7.0",
     "@prisma/client": "^7.7.0",
+    "ai": "^7.0.37",
     "dotenv": "^17.4.2",
     "mammoth": "^1.12.0",
     "openai": "^6.38.0",
@@ -27,6 +41,6 @@
     "pg": "^8.20.0",
     "playwright": "^1.59.1",
     "word-extractor": "^1.0.4",
-    "zod": "^4.3.6"
+    "zod": "^4.4.3"
   }
 }
