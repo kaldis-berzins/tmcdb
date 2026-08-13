@@ -1,50 +1,84 @@
-import { openai } from "@ai-sdk/openai";
-import { streamText, tool } from "ai";
-import { z } from "zod";
+// src/routes/api/chat/+server.ts
+import { openai } from '@ai-sdk/openai';
+import {
+  convertToModelMessages,
+  streamText,
+  stepCountIs,
+  tool
+} from 'ai';
+import { z } from 'zod';
+import { runReadOnlySql } from '../../../lib/server/sql';
+import { DATABASE_SCHEMA_PROMPT } from '../../../lib/server/db-schema-prompt';
 
 export async function POST({ request }) {
+  const { messages } = await request.json();
 
-    const { messages } = await request.json();
+  const result = streamText({
+    model: openai('gpt-5.5'),
 
-    const result = streamText({
-        model: openai("gpt-5-mini"),
+    system: `
+You are a legal database research assistant for an EUIPO trademark cancellation database.
 
-        messages,
+You can answer questions by writing PostgreSQL SQL and executing it with the runSql tool.
 
-        tools: {
+Rules:
+- Prefer to use runSql for factual database questions.
+- Generate PostgreSQL SQL using the provided schema.
+- Use quoted identifiers, e.g. "Decision", "caseNumber", "badFaithOutcome".
+- Never invent decisions, case numbers, dates, citations, or outcomes.
+- When presenting results, cite concrete fields like "sourceKey", "caseNumber", "date", "institution", and "badFaithOutcome".
+- If the SQL result is empty, say no matching records were found.
+- For broad analytical questions, use aggregate SQL first, then if useful run a second query to retrieve examples.
+- For text fields, return snippets using LEFT("text", n), not the entire text, unless specifically asked.
+- If you encounter a SQL error, correct the SQL and try again.
 
-            searchDecisions: tool({
-                description:
-                    "Search legal decisions by court and topic",
+${DATABASE_SCHEMA_PROMPT}
+`,
 
-                inputSchema: z.object({
-                    court: z.string().optional(),
-                    topic: z.string().optional()
-                }),
+    messages: await convertToModelMessages(messages),
 
-                execute: async ({court, topic}) => {
+    tools: {
+      runSql: tool({
+        description:
+          'Execute a read-only PostgreSQL SELECT/WITH query against the EUIPO trademark cancellation database.',
+        inputSchema: z.object({
+          sql: z
+            .string()
+            .describe(
+              'A single read-only PostgreSQL SELECT or WITH query. Use quoted identifiers.'
+            ),
+          maxRows: z
+            .number()
+            .int()
+            .min(1)
+            .max(500)
+            .default(100)
+            .describe('Maximum rows to return.')
+        }),
+        execute: async ({ sql, maxRows }) => {
+          try {
+            const rows = await runReadOnlySql(sql, maxRows);
 
-                    // Replace with Prisma query
-                    return [
-                        {
-                            title: "Smith v Minister",
-                            court,
-                            year: 2024,
-                            topic
-                        },
-                        {
-                            title: "Jones v State",
-                            court,
-                            year: 2023,
-                            topic
-                        }
-                    ];
-                }
-            })
-
+            return {
+              ok: true,
+              rowCount: rows.length,
+              rows
+            };
+          } catch (error) {
+            return {
+              ok: false,
+              error:
+                error instanceof Error
+                  ? error.message
+                  : 'Unknown SQL execution error'
+            };
+          }
         }
-    });
+      })
+    },
 
+    stopWhen: stepCountIs(8)
+  });
 
-    return result.toUIMessageStreamResponse();
+  return result.toUIMessageStreamResponse();
 }
