@@ -8,3 +8,5 @@ Dockerfile
 docker-compose.yaml
 npm-debug.log
 .env
+data
+backups
