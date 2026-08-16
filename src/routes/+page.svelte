@@ -2,6 +2,45 @@
 <script lang="ts">
   import { Chat } from '@ai-sdk/svelte';
   import { DefaultChatTransport } from 'ai';
+  import SqlResultTable from '../lib/components/SQLResultTable.svelte';
+
+  type SqlRow = Record<string, unknown>;
+
+  type RunSqlOutput = {
+    ok: boolean;
+    rowCount?: number;
+    columns?: string[];
+    rows?: SqlRow[];
+    error?: string;
+  };
+
+  type RunSqlToolPart = {
+    type: 'tool-runSql';
+    state?: string;
+    input?: {
+      sql?: string;
+      maxRows?: number;
+    };
+    output?: RunSqlOutput;
+    errorText?: string;
+  };
+
+  function isRunSqlPart(part: unknown): part is RunSqlToolPart {
+    return (
+      typeof part === 'object' &&
+      part !== null &&
+      'type' in part &&
+      (part as { type?: unknown }).type === 'tool-runSql'
+    );
+  }
+
+  function getRows(output: RunSqlOutput | undefined): SqlRow[] {
+    return Array.isArray(output?.rows) ? output.rows : [];
+  }
+
+  function getColumns(output: RunSqlOutput | undefined): string[] | undefined {
+    return Array.isArray(output?.columns) ? output.columns : undefined;
+  }
 
   const chat = new Chat({
     transport: new DefaultChatTransport({
@@ -54,7 +93,8 @@
     <button
       type="button"
       onclick={() => {
-        input = 'Find recent decisions involving C2 knowledge of prior rights and D10 Lindt-type factors.';
+        input =
+          'Find recent decisions involving C2 knowledge of prior rights and D10 Lindt-type factors.';
         submit();
       }}
     >
@@ -71,6 +111,39 @@
           {#each message.parts as part}
             {#if part.type === 'text'}
               <p>{part.text}</p>
+            {:else if isRunSqlPart(part)}
+              <div class="tool-result">
+                {#if part.input?.sql}
+                  <details class="sql-details">
+                    <summary>SQL query</summary>
+                    <pre>{part.input.sql}</pre>
+                  </details>
+                {/if}
+
+                {#if part.state === 'input-streaming' || part.state === 'input-available'}
+                  <p class="tool-status">Running SQL query…</p>
+                {:else if part.state === 'output-available'}
+                  {@const output = part.output}
+
+                  {#if output?.ok}
+                    {@const rows = getRows(output)}
+
+                    <SqlResultTable
+                      rows={rows}
+                      columns={getColumns(output)}
+                      caption={`${output.rowCount ?? rows.length} SQL row(s) returned`}
+                    />
+                  {:else}
+                    <div class="sql-error">
+                      SQL error: {output?.error ?? 'Unknown SQL execution error'}
+                    </div>
+                  {/if}
+                {:else if part.state === 'output-error'}
+                  <div class="sql-error">
+                    SQL tool error: {part.errorText ?? 'Unknown SQL tool error'}
+                  </div>
+                {/if}
+              </div>
             {/if}
           {/each}
         </div>
@@ -189,6 +262,44 @@
   .content p {
     margin-top: 0;
     white-space: pre-wrap;
+  }
+
+  .tool-result {
+    margin-top: 0.75rem;
+  }
+
+  .sql-details {
+    margin: 0.75rem 0;
+  }
+
+  .sql-details summary {
+    cursor: pointer;
+    font-weight: 600;
+    color: #333;
+  }
+
+  .sql-details pre {
+    margin-top: 0.5rem;
+    padding: 0.75rem;
+    background: #f4f4f4;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    overflow-x: auto;
+    font-size: 0.85rem;
+  }
+
+  .tool-status {
+    color: #666;
+    font-style: italic;
+  }
+
+  .sql-error {
+    color: #b00020;
+    background: #ffe8ec;
+    border: 1px solid #ffccd5;
+    padding: 0.75rem;
+    border-radius: 8px;
+    margin-top: 0.5rem;
   }
 
   form {

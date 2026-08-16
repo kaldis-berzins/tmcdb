@@ -32,6 +32,15 @@ Rules:
 - For text fields, return snippets using LEFT("text", n), not the entire text, unless specifically asked.
 - If you encounter a SQL error, correct the SQL and try again.
 
+Important UI rule:
+- Do not render SQL query results as a Markdown table.
+- The application will display SQL results in a separate interactive table.
+- After using runSql, provide only a concise written explanation of what the results show.
+- Mention the number of rows returned when useful.
+- You may highlight notable patterns, caveats, or examples, but do not duplicate all rows in text.
+- Do not use pipe-table Markdown syntax.
+- Do not output tables in plain text.
+
 ${DATABASE_SCHEMA_PROMPT}
 `,
 
