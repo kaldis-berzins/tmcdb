@@ -15,6 +15,7 @@ Important:
 - If joining provision data, use "DecisionProvision" and "Provision".
 - If joining citations, use "Citation".
 - If joining links, use "DecisionLink".
+- When returning individual decisions, always include d."url" AS "decisionUrl" in the SELECT list so the UI can link to the decision. This does not apply to aggregate-only queries.
 
 Tables:
 
@@ -121,6 +122,7 @@ SELECT
   d."institution",
   d."badFaithOutcome",
   d."trademarkName",
+  d."url" AS "decisionUrl",
   f."id" AS "factorId",
   f."label" AS "factorLabel",
   df."evidence"
@@ -153,6 +155,7 @@ SELECT
   d."institution",
   d."badFaithOutcome",
   d."trademarkName",
+  d."url" AS "decisionUrl",
   LEFT(d."text", 1000) AS "textSnippet"
 FROM "Decision" d
 WHERE d."text" ILIKE '%intention to block%'

@@ -61,46 +61,19 @@
 
 <svelte:head>
   <title>EUIPO Cancellation Database Chat</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap"
+    rel="stylesheet"
+  />
 </svelte:head>
 
 <div class="chat-shell">
   <header>
-    <h1>EUIPO Cancellation Database Chat</h1>
+    <h1>TMCDB</h1>
     <p>Ask natural-language questions. The assistant will generate SQL and query the database.</p>
   </header>
-
-  <div class="examples">
-    <button
-      type="button"
-      onclick={() => {
-        input = 'Count decisions by bad faith outcome and institution.';
-        submit();
-      }}
-    >
-      Outcomes by institution
-    </button>
-
-    <button
-      type="button"
-      onclick={() => {
-        input = 'Which factors are most common in cancelled bad faith cases?';
-        submit();
-      }}
-    >
-      Common factors
-    </button>
-
-    <button
-      type="button"
-      onclick={() => {
-        input =
-          'Find recent decisions involving C2 knowledge of prior rights and D10 Lindt-type factors.';
-        submit();
-      }}
-    >
-      C2 and D10 cases
-    </button>
-  </div>
 
   <main class="messages">
     {#each chat.messages as message}
@@ -194,6 +167,14 @@
 </div>
 
 <style>
+  :global(body) {
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    margin: 0;
+    background: #111827;
+    color: #e5e7eb;
+    color-scheme: dark;
+  }
+
   .chat-shell {
     max-width: 950px;
     margin: 0 auto;
@@ -208,21 +189,7 @@
   }
 
   header p {
-    color: #666;
-  }
-
-  .examples {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  .examples button {
-    border: 1px solid #ddd;
-    background: white;
-    border-radius: 999px;
-    padding: 0.5rem 0.75rem;
-    cursor: pointer;
+    color: #9ca3af;
   }
 
   .messages {
@@ -230,10 +197,10 @@
     flex-direction: column;
     gap: 1rem;
     min-height: 500px;
-    border: 1px solid #e5e5e5;
+    border: 1px solid #374151;
     border-radius: 12px;
     padding: 1rem;
-    background: #fafafa;
+    background: #1f2937;
   }
 
   article {
@@ -242,26 +209,31 @@
     gap: 1rem;
     padding: 1rem;
     border-radius: 10px;
+    min-width: 0;
   }
 
   article.user {
-    background: #eef6ff;
+    background: #1e3a5f;
   }
 
   article.assistant {
-    background: white;
-    border: 1px solid #eee;
+    background: #111827;
+    border: 1px solid #374151;
   }
 
   .role {
     font-weight: 700;
     text-transform: capitalize;
-    color: #555;
+    color: #a5b4fc;
   }
 
   .content p {
     margin-top: 0;
     white-space: pre-wrap;
+  }
+
+  .content {
+    min-width: 0;
   }
 
   .tool-result {
@@ -275,28 +247,28 @@
   .sql-details summary {
     cursor: pointer;
     font-weight: 600;
-    color: #333;
+    color: #e5e7eb;
   }
 
   .sql-details pre {
     margin-top: 0.5rem;
     padding: 0.75rem;
-    background: #f4f4f4;
-    border: 1px solid #ddd;
+    background: #030712;
+    border: 1px solid #374151;
     border-radius: 8px;
     overflow-x: auto;
     font-size: 0.85rem;
   }
 
   .tool-status {
-    color: #666;
+    color: #9ca3af;
     font-style: italic;
   }
 
   .sql-error {
-    color: #b00020;
-    background: #ffe8ec;
-    border: 1px solid #ffccd5;
+    color: #fecaca;
+    background: #450a0a;
+    border: 1px solid #991b1b;
     padding: 0.75rem;
     border-radius: 8px;
     margin-top: 0.5rem;
@@ -310,16 +282,18 @@
   input {
     flex: 1;
     padding: 0.8rem 1rem;
-    border: 1px solid #ccc;
+    border: 1px solid #4b5563;
     border-radius: 8px;
+    background: #1f2937;
+    color: #f9fafb;
   }
 
   form button {
     padding: 0.8rem 1rem;
     border: 0;
     border-radius: 8px;
-    background: #111;
-    color: white;
+    background: #4f46e5;
+    color: #fff;
     cursor: pointer;
   }
 
@@ -329,9 +303,9 @@
   }
 
   .error {
-    color: #b00020;
-    background: #ffe8ec;
-    border: 1px solid #ffccd5;
+    color: #fecaca;
+    background: #450a0a;
+    border: 1px solid #991b1b;
     padding: 1rem;
     border-radius: 8px;
   }

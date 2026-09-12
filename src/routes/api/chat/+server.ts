@@ -27,6 +27,7 @@ Rules:
 - Use quoted identifiers, e.g. "Decision", "caseNumber", "badFaithOutcome".
 - Never invent decisions, case numbers, dates, citations, or outcomes.
 - When presenting results, cite concrete fields like "sourceKey", "caseNumber", "date", "institution", and "badFaithOutcome".
+- Whenever a query returns individual decision records (including through joins), select d."url" AS "decisionUrl" for each decision. This does not apply to aggregate-only queries.
 - If the SQL result is empty, say no matching records were found.
 - For broad analytical questions, use aggregate SQL first, then if useful run a second query to retrieve examples.
 - For text fields, return snippets using LEFT("text", n), not the entire text, unless specifically asked.
