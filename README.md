@@ -38,3 +38,100 @@ To install:
 - The factor extraction script requires `OPENAI_API_KEY` and `OPENAI_PROMPT_ID` in your environment
 - The citation and factor scripts support reprocessing through `REPROCESS=true`
 - Most script arguments should be passed after `--`, for example `npm run import:euipo -- sources/small-import.json`
+
+## Copy local database to VPS
+
+When your local database is the version you want to keep, you can dump it locally and restore it on the VPS.
+
+### 1. Dump the local database
+
+Run this from the project root on your local machine:
+
+```bash
+mkdir -p backups/db
+docker compose exec -T db \
+  pg_dump \
+  -U postgres \
+  -d tmcdb \
+  -Fc \
+  --no-owner \
+  --no-privileges \
+  > backups/db/tmcdb.dump
+```
+
+This creates a custom-format dump at `backups/db/tmcdb.dump`.
+
+### 2. Copy the dump file to the VPS
+
+From your local machine:
+
+```bash
+scp backups/db/tmcdb.dump your-user@your-vps:/tmp/tmcdb.dump
+```
+
+### 3. Back up the current VPS database
+
+Before restoring anything, create a backup on the VPS:
+
+```bash
+mkdir -p backups/db
+docker compose exec -T db \
+  pg_dump \
+  -U postgres \
+  -d tmcdb \
+  -Fc \
+  --no-owner \
+  --no-privileges \
+  > backups/db/tmcdb-before-restore.dump
+```
+
+### 4. Stop the app container on the VPS
+
+This prevents writes during the restore:
+
+```bash
+docker compose stop tmcdb
+```
+
+### 5. Restore directly into the VPS database
+
+```bash
+docker compose exec -T db \
+  pg_restore \
+  -U postgres \
+  -d tmcdb \
+  --clean \
+  --if-exists \
+  --no-owner \
+  --no-privileges \
+  < /tmp/tmcdb.dump
+```
+
+### 6. Start the app again
+
+```bash
+docker compose up -d tmcdb
+rm -f /tmp/tmcdb.dump
+```
+
+At that point the VPS database should exactly match the local one you dumped.
+
+### Rollback
+
+If something looks wrong after the restore, stop the app and restore the backup dump:
+
+```bash
+docker compose stop tmcdb
+
+docker compose exec -T db \
+  pg_restore \
+  -U postgres \
+  -d tmcdb \
+  --clean \
+  --if-exists \
+  --no-owner \
+  --no-privileges \
+  < backups/db/tmcdb-before-restore.dump
+
+docker compose up -d tmcdb
+```

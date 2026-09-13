@@ -2,6 +2,7 @@
 <script lang="ts">
   import { Chat } from '@ai-sdk/svelte';
   import { DefaultChatTransport } from 'ai';
+  import MarkdownText from '$lib/components/MarkdownText.svelte';
   import SqlResultTable from '../lib/components/SQLResultTable.svelte';
 
   type SqlRow = Record<string, unknown>;
@@ -83,7 +84,11 @@
         <div class="content">
           {#each message.parts as part}
             {#if part.type === 'text'}
-              <p>{part.text}</p>
+              {#if message.role === 'assistant'}
+                <MarkdownText text={part.text} />
+              {:else}
+                <p>{part.text}</p>
+              {/if}
             {:else if isRunSqlPart(part)}
               <div class="tool-result">
                 {#if part.input?.sql}
