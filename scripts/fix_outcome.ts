@@ -1,4 +1,8 @@
-import { BadFaithOutcome, LinkType } from "../generated/prisma/enums";
+import {
+  BadFaithOutcome,
+  Institution,
+  LinkType,
+} from "../generated/prisma/enums";
 import { prisma } from "../lib/prisma";
 
 function normalizeOutcome(outcome: string | null | undefined): string {
@@ -6,6 +10,14 @@ function normalizeOutcome(outcome: string | null | undefined): string {
     .trim()
     .toLowerCase()
     .replace(/\s+/g, " ");
+}
+
+function normalizeText(text: string | null | undefined): string {
+  return (text ?? "")
+    .toLowerCase()
+    .replace(/[\u00a0\u2007\u202f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 /**
@@ -126,6 +138,98 @@ function proceduralFallback(outcome: string | null | undefined): BadFaithOutcome
   }
 }
 
+function hasPartialSignal(text: string): boolean {
+  return [
+    "declared partially invalid",
+    "trade mark partially invalid",
+    "mark partially invalid",
+    "eutm partially cancelled",
+    "trade mark partially cancelled",
+  ].some((phrase) => text.includes(phrase));
+}
+
+function isOutcomeThatLeavesLowerDecisionStanding(
+  outcome: string | null | undefined
+): boolean {
+  const o = normalizeOutcome(outcome);
+
+  return [
+    "judgment confirmed",
+    "decision confirmed",
+    "appeal inadmissible",
+  ].includes(o);
+}
+
+function inferBadFaithOutcomeFromText(decision: {
+  institution: Institution;
+  outcome: string | null;
+  text: string | null;
+}): BadFaithOutcome | null {
+  const normalizedText = normalizeText(decision.text);
+  if (!normalizedText) {
+    return null;
+  }
+
+  const header = normalizedText.slice(0, 3000);
+
+  if (
+    header.includes(" no bad faith ") ||
+    header.includes(" no bad faith -") ||
+    header.includes(" no bad faith –")
+  ) {
+    return BadFaithOutcome.REJECTED;
+  }
+
+  if (
+    normalizedText.includes("has not overcome the burden of proving that the eutm proprietor acted in bad faith") ||
+    normalizedText.includes("failed to prove that the eutm proprietor acted in bad faith") ||
+    normalizedText.includes("it has not been established that the eutm proprietor acted in bad faith")
+  ) {
+    return BadFaithOutcome.REJECTED;
+  }
+
+  if (
+    (decision.institution === Institution.GC ||
+      decision.institution === Institution.ECJ) &&
+    isOutcomeThatLeavesLowerDecisionStanding(decision.outcome) &&
+    header.includes(" bad faith ") &&
+    !header.includes(" no bad faith ")
+  ) {
+    return BadFaithOutcome.CANCELLED;
+  }
+
+  if (
+    decision.institution === Institution.BOA &&
+    isOutcomeThatLeavesLowerDecisionStanding(decision.outcome)
+  ) {
+    const cancellationApplicantAppellant =
+      /cancellation applicant\s*\/\s*appellant|appellant\s*\/\s*cancellation applicant|applicant for cancellation\s*\/\s*appellant/.test(
+        header
+      );
+    const proprietorAppellant =
+      /eutm proprietor\s*\/\s*appellant|appellant\s*\/\s*eutm proprietor|proprietor of the european union trade mark\s*\/\s*appellant/.test(
+        header
+      );
+    const transferOrAssignmentDispute =
+      header.includes("assignment applicant") ||
+      normalizedText.includes("transfer ownership");
+
+    if (cancellationApplicantAppellant && !transferOrAssignmentDispute) {
+      return BadFaithOutcome.REJECTED;
+    }
+
+    if (proprietorAppellant) {
+      if (hasPartialSignal(normalizedText)) {
+        return BadFaithOutcome.PARTIAL;
+      }
+
+      return BadFaithOutcome.CANCELLED;
+    }
+  }
+
+  return null;
+}
+
 /**
  * Try to find a linked lower/earlier decision whose badFaithOutcome is already known.
  *
@@ -162,16 +266,38 @@ async function findLinkedKnownOutcome(
   if (!decision) return null;
 
   const linkedOutcomes: BadFaithOutcome[] = [];
+  const danglingReferences = new Set<string>();
 
   for (const link of decision.outgoingLinks) {
     if (link.toDecision?.badFaithOutcome) {
       linkedOutcomes.push(link.toDecision.badFaithOutcome);
+    } else if (link.externalReference) {
+      danglingReferences.add(link.externalReference);
     }
   }
 
   for (const link of decision.incomingLinks) {
     if (link.fromDecision?.badFaithOutcome) {
       linkedOutcomes.push(link.fromDecision.badFaithOutcome);
+    } else if (link.externalReference) {
+      danglingReferences.add(link.externalReference);
+    }
+  }
+
+  if (danglingReferences.size > 0) {
+    const linkedDecisions = await prisma.decision.findMany({
+      where: {
+        sourceKey: { in: [...danglingReferences] },
+      },
+      select: {
+        badFaithOutcome: true,
+      },
+    });
+
+    for (const linkedDecision of linkedDecisions) {
+      if (linkedDecision.badFaithOutcome) {
+        linkedOutcomes.push(linkedDecision.badFaithOutcome);
+      }
     }
   }
 
@@ -201,8 +327,10 @@ async function main() {
       id: true,
       sourceKey: true,
       caseNumber: true,
+      institution: true,
       outcome: true,
       badFaithOutcome: true,
+      text: true,
     },
     orderBy: {
       date: "asc",
@@ -217,7 +345,10 @@ async function main() {
 
     if (mapped === null && isProceduralOutcome(decision.outcome)) {
       const inherited = await findLinkedKnownOutcome(decision.id);
-      mapped = inherited ?? proceduralFallback(decision.outcome);
+      const inferred = inferBadFaithOutcomeFromText(decision);
+      mapped = inherited ?? inferred ?? proceduralFallback(decision.outcome);
+    } else if (mapped === BadFaithOutcome.UNCLEAR) {
+      mapped = inferBadFaithOutcomeFromText(decision) ?? mapped;
     }
 
     if (!mapped) {

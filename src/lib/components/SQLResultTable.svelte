@@ -1,8 +1,13 @@
 <!-- src/lib/components/SqlResultTable.svelte -->
 <script lang="ts">
+  import ExpandableTableCell from './ExpandableTableCell.svelte';
+
   export let rows: Record<string, unknown>[] = [];
   export let columns: string[] | undefined = undefined;
   export let caption: string | undefined = undefined;
+
+  let popupValue = '';
+  let popupOpen = false;
 
   function columnKey(column: string) {
     return column.replace(/[^a-z0-9]/gi, '').toLowerCase();
@@ -54,6 +59,15 @@
       return undefined;
     }
   }
+
+  function openTextPopup(value: string) {
+    popupValue = value;
+    popupOpen = true;
+  }
+
+  function closeTextPopup() {
+    popupOpen = false;
+  }
 </script>
 
 {#if rows.length === 0}
@@ -94,7 +108,10 @@
                     </svg>
                   </a>
                 {:else}
-                  {formatValue(row[column])}
+                  <ExpandableTableCell
+                    value={formatValue(row[column])}
+                    on:open={(event) => openTextPopup(event.detail.value)}
+                  />
                 {/if}
               </td>
             {/each}
@@ -103,6 +120,28 @@
       </tbody>
     </table>
   </div>
+
+  {#if popupOpen}
+    <div class="text-popup-layer">
+      <button
+        class="text-popup-backdrop"
+        type="button"
+        aria-label="Close full text popup"
+        on:click={closeTextPopup}
+      ></button>
+
+      <div
+        class="text-popup"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Full cell text"
+        tabindex="-1"
+      >
+        <button class="close-popup" type="button" on:click={closeTextPopup}>Close</button>
+        <pre>{popupValue}</pre>
+      </div>
+    </div>
+  {/if}
 {/if}
 
 <style>
@@ -153,6 +192,64 @@
     stroke-width: 2;
     stroke-linecap: round;
     stroke-linejoin: round;
+  }
+
+  .text-popup-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+  }
+
+  .text-popup-backdrop {
+    position: absolute;
+    inset: 0;
+    border: 0;
+    background: rgb(3 7 18 / 0.72);
+    cursor: pointer;
+  }
+
+  .text-popup {
+    position: relative;
+    width: min(42rem, 100%);
+    max-height: min(75vh, 48rem);
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    padding: 1rem;
+    border: 1px solid #374151;
+    border-radius: 0.75rem;
+    background: #111827;
+    box-shadow: 0 24px 80px rgb(0 0 0 / 0.45);
+  }
+
+  .text-popup pre {
+    margin: 0;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    font: inherit;
+    color: #e5e7eb;
+  }
+
+  .close-popup {
+    align-self: flex-end;
+    border: 1px solid #4b5563;
+    border-radius: 0.5rem;
+    background: #1f2937;
+    color: #e5e7eb;
+    padding: 0.45rem 0.75rem;
+    cursor: pointer;
+    font: inherit;
+  }
+
+  .close-popup:hover,
+  .close-popup:focus-visible {
+    background: #374151;
   }
 
   caption {

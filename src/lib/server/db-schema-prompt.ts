@@ -15,6 +15,9 @@ Important:
 - If joining provision data, use "DecisionProvision" and "Provision".
 - If joining citations, use "Citation".
 - If joining links, use "DecisionLink".
+- For citation queries, "Citation"."citingDecisionId" is the decision doing the citing and "Citation"."citedDecisionId" is the decision being cited.
+- Resolved citations use "citedDecisionId"; unresolved citation strings are stored in "citedReference".
+- For "most cited" questions, usually count DISTINCT "citingDecisionId" to avoid overcounting repeated mentions within one decision.
 - When returning individual decisions, always include d."url" AS "decisionUrl" in the SELECT list so the UI can link to the decision. This does not apply to aggregate-only queries.
 
 Tables:
@@ -161,4 +164,77 @@ FROM "Decision" d
 WHERE d."text" ILIKE '%intention to block%'
 ORDER BY d."date" DESC
 LIMIT 20
+
+Find decisions that cite a specific case:
+
+SELECT DISTINCT
+  d."sourceKey",
+  d."caseNumber",
+  d."date",
+  d."institution",
+  d."badFaithOutcome",
+  d."trademarkName",
+  d."url" AS "decisionUrl"
+FROM "Citation" c
+JOIN "Decision" d ON d."id" = c."citingDecisionId"
+JOIN "Decision" cited ON cited."id" = c."citedDecisionId"
+WHERE cited."caseNumber" = 'T-33/11'
+ORDER BY d."date" DESC NULLS LAST
+LIMIT 50
+
+Find the cases cited by a specific decision:
+
+SELECT
+  d."sourceKey",
+  d."caseNumber",
+  d."date",
+  d."institution",
+  d."url" AS "decisionUrl",
+  cited."caseNumber" AS "citedCaseNumber",
+  cited."institution" AS "citedInstitution",
+  c."citedReference",
+  LEFT(c."text", 300) AS "citationSnippet"
+FROM "Citation" c
+JOIN "Decision" d ON d."id" = c."citingDecisionId"
+LEFT JOIN "Decision" cited ON cited."id" = c."citedDecisionId"
+WHERE d."caseNumber" = 'R1367/2025-1'
+ORDER BY cited."caseNumber" NULLS LAST, c."citedReference" NULLS LAST
+LIMIT 50
+
+Find the most cited decisions:
+
+SELECT
+  cited."sourceKey",
+  cited."caseNumber",
+  cited."date",
+  cited."institution",
+  cited."badFaithOutcome",
+  cited."url" AS "decisionUrl",
+  COUNT(DISTINCT c."citingDecisionId")::int AS "citingDecisionCount",
+  COUNT(*)::int AS "citationMentionCount"
+FROM "Citation" c
+JOIN "Decision" cited ON cited."id" = c."citedDecisionId"
+GROUP BY
+  cited."id",
+  cited."sourceKey",
+  cited."caseNumber",
+  cited."date",
+  cited."institution",
+  cited."badFaithOutcome",
+  cited."url"
+ORDER BY "citingDecisionCount" DESC, "citationMentionCount" DESC
+LIMIT 50
+
+Find the most frequently cited unresolved references:
+
+SELECT
+  c."citedReference",
+  COUNT(DISTINCT c."citingDecisionId")::int AS "citingDecisionCount",
+  COUNT(*)::int AS "citationMentionCount"
+FROM "Citation" c
+WHERE c."citedDecisionId" IS NULL
+  AND c."citedReference" IS NOT NULL
+GROUP BY c."citedReference"
+ORDER BY "citingDecisionCount" DESC, "citationMentionCount" DESC
+LIMIT 50
 `;

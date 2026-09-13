@@ -6,14 +6,11 @@ import { z } from "zod";
 import mammoth from "mammoth";
 import WordExtractor from "word-extractor";
 import { PDFParse } from "pdf-parse";
+import { syncDecisionLinksForEntries } from "./sync_decision_links";
 
 // Adjust this import to wherever your generated enums come from.
 // If you use @prisma/client, import from there instead.
-import {
-  Institution,
-  SourceType,
-  LinkType,
-} from "../generated/prisma/enums";
+import { Institution, SourceType } from "../generated/prisma/enums";
 
 // -------------------------
 // Runtime-validated input types
@@ -231,13 +228,6 @@ function dedupeStrings(values: string[]): string[] {
   return [...new Set(values.map((v) => v.trim()).filter(Boolean))];
 }
 
-function mapLinkType(entry: EuipoEntry): LinkType {
-  // Assumption:
-  // - an APPEAL entry linking to a related decision is an APPEAL link
-  // - everything else is RELATED
-  return entry.type === "APPEAL" ? LinkType.APPEAL : LinkType.RELATED;
-}
-
 // -------------------------
 // DB sync helpers
 // -------------------------
@@ -390,67 +380,6 @@ async function upsertDecisionFromEntry(
   };
 }
 
-async function syncDecisionLinks(entries: EuipoEntry[]): Promise<void> {
-  const sourceKeys = entries.map((e) => e.uniqueSolrKey);
-
-  const decisions = await prisma.decision.findMany({
-    where: {
-      sourceKey: { in: sourceKeys },
-    },
-    select: {
-      id: true,
-      sourceKey: true,
-    },
-  });
-
-  const decisionIdBySourceKey = new Map<string, string>();
-  for (const decision of decisions) {
-    if (decision.sourceKey) {
-      decisionIdBySourceKey.set(decision.sourceKey, decision.id);
-    }
-  }
-
-  for (const entry of entries) {
-    const fromDecisionId = decisionIdBySourceKey.get(entry.uniqueSolrKey);
-    if (!fromDecisionId) continue;
-
-    await prisma.decisionLink.deleteMany({
-      where: {
-        fromDecisionId,
-        linkType: { in: [LinkType.APPEAL, LinkType.RELATED] },
-      },
-    });
-
-    const linkType = mapLinkType(entry);
-    const seen = new Set<string>();
-
-    const data = entry.relatedCases
-      .map((related) => {
-        const toDecisionId = decisionIdBySourceKey.get(related.id) ?? null;
-        const externalReference = toDecisionId ? null : related.id;
-
-        return {
-          fromDecisionId,
-          toDecisionId,
-          externalReference,
-          linkType,
-        };
-      })
-      .filter((row) => {
-        const dedupeKey = `${row.toDecisionId ?? "null"}|${row.externalReference ?? "null"}|${row.linkType}`;
-        if (seen.has(dedupeKey)) return false;
-        seen.add(dedupeKey);
-        return true;
-      });
-
-    if (data.length > 0) {
-      await prisma.decisionLink.createMany({
-        data,
-      });
-    }
-  }
-}
-
 // -------------------------
 // Main
 // -------------------------
@@ -490,8 +419,10 @@ async function main() {
     }
 
     // Pass 2: links
-    await syncDecisionLinks(entries);
-    console.log("Decision links synced.");
+    const linkResult = await syncDecisionLinksForEntries(entries);
+    console.log(
+      `Decision links synced. Deleted: ${linkResult.deleted}, created: ${linkResult.created}, backfilled: ${linkResult.backfilled}`
+    );
   } finally {
     await context.close().catch(() => {});
     await browser.close().catch(() => {});
