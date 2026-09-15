@@ -90,5 +90,7 @@ ${DATABASE_SCHEMA_PROMPT}
     stopWhen: stepCountIs(8)
   });
 
-  return result.toUIMessageStreamResponse();
+  return result.toUIMessageStreamResponse({
+    onError: () => 'Unable to complete the response. Please try again.'
+  });
 }

@@ -113,12 +113,12 @@
                     />
                   {:else}
                     <div class="sql-error">
-                      SQL error: {output?.error ?? 'Unknown SQL execution error'}
+                      SQL error: {output?.error?.trim() || 'Unknown SQL execution error'}
                     </div>
                   {/if}
                 {:else if part.state === 'output-error'}
                   <div class="sql-error">
-                    SQL tool error: {part.errorText ?? 'Unknown SQL tool error'}
+                    SQL tool error: {part.errorText?.trim() || 'Unknown SQL tool error'}
                   </div>
                 {/if}
               </div>
@@ -139,7 +139,7 @@
 
     {#if chat.error}
       <div class="error">
-        {chat.error.message}
+        {chat.error.message?.trim() || 'Unable to complete the response. Please try again.'}
       </div>
     {/if}
   </main>

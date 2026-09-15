@@ -1,5 +1,6 @@
 // src/lib/server/sql.ts
 import { prisma } from '../../../lib/prisma';
+import { serializeRows } from './sql-serialization';
 
 const FORBIDDEN_SQL = [
   /\binsert\b/i,
@@ -156,31 +157,6 @@ export function validateReadOnlySql(sql: string) {
   }
 
   return normalized;
-}
-
-function serializeValue(value: unknown): unknown {
-  if (value instanceof Date) {
-    return value.toISOString();
-  }
-
-  if (typeof value === 'bigint') {
-    return value.toString();
-  }
-
-  return value;
-}
-
-function serializeRows(rows: unknown[]) {
-  return rows.map((row) => {
-    if (!row || typeof row !== 'object') return row;
-
-    return Object.fromEntries(
-      Object.entries(row as Record<string, unknown>).map(([key, value]) => [
-        key,
-        serializeValue(value)
-      ])
-    );
-  });
 }
 
 export async function runReadOnlySql(sql: string, maxRows = 100) {
