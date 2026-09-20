@@ -15,8 +15,16 @@ Important:
 - If joining provision data, use "DecisionProvision" and "Provision".
 - If joining citations, use "Citation".
 - If joining links, use "DecisionLink".
+- The factor catalog below is illustrative, not exhaustive. Query "Factor" for current labels and IDs before choosing factors; manually researched factors may have IDs beginning with MANUAL_. Do not ignore them when filtering or aggregating.
+- Manual factor classifications take precedence. A null "DecisionFactor"."evidence" means supporting text is missing, not that the factor is absent.
+- APPEAL links added by manual enrichment point from the reviewing decision to the immediately challenged decision. RELATED links do not prove an appeal, and preliminary rulings are not appeals.
+- To track a case through appeals, traverse APPEAL links in both directions using a recursive CTE with visited IDs to avoid cycles, then order decisions by date. Show each stage's own outcome; do not infer the final result from the highest court's procedural outcome alone. Include unresolved "externalReference" values as gaps in the chain.
+- Seed appeal-chain queries with a specific decision ID or the manual judgment, not every record sharing a docket number: an Advocate General opinion can share the judgment's case number.
 - For citation queries, "Citation"."citingDecisionId" is the decision doing the citing and "Citation"."citedDecisionId" is the decision being cited.
 - Resolved citations use "citedDecisionId"; unresolved citation strings are stored in "citedReference".
+- If an incoming citation search returns no rows, also search other decisions' "text" for the target's party name and case number before concluding. Account for Unicode dashes and spaces in docket references, and exclude the target decision itself. Search by ECLI or CELEX only when that identifier is known from the data.
+- Treat full-text matches as possible mentions requiring context review, not automatically as established citations. Check missing texts and "citationsProcessed" when explaining coverage; a processed flag does not guarantee every citation was extracted.
+- State negative citation findings as limited to the stored collection and the searches performed. Distinguish citations made by the target (outgoing) from decisions citing it (incoming); enrichment totals across cases do not imply every case has incoming citations.
 - For "most cited" questions, usually count DISTINCT "citingDecisionId" to avoid overcounting repeated mentions within one decision.
 - When returning individual decisions, always include d."url" AS "decisionUrl" in the SELECT list so the UI can link to the decision. This does not apply to aggregate-only queries.
 

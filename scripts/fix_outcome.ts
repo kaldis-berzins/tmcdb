@@ -323,6 +323,7 @@ async function main() {
   const dryRun = process.argv.includes("--dry-run");
 
   const decisions = await prisma.decision.findMany({
+    where: { source: { not: "MANUAL" } },
     select: {
       id: true,
       sourceKey: true,

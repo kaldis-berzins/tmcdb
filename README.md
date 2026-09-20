@@ -18,6 +18,9 @@ To install:
 ## Data import and processing scripts
 
 - `npm run import:euipo -- <path-to-json>` imports a EUIPO export file, downloads decision text when available, and syncs related-case links for that batch
+- `npm run import:manual -- <path-to-csv> --dry-run` previews a manual research CSV import, including duplicate conflicts and omitted columns
+- `npm run import:manual -- <path-to-csv>` imports the CSV in one transaction; add `--skip-conflicts` to skip ambiguous database matches
+- `npm run enrich:manual -- <path-to-csv>` previews text, citation, factor and appeal enrichment for imported manual cases; add `--apply` to run it
 - `npm run link:decisions` backfills `DecisionLink` records across the whole database by resolving saved `externalReference` values to matching `Decision.sourceKey` rows
 - `npm run texts:retry-missing -- <case-number> [more-case-numbers...]` retries downloading missing decision text for specific cases; if no case numbers are passed, the script falls back to its built-in defaults
 - `npm run outcomes:sync` recalculates `badFaithOutcome` values from decision outcomes and linked appeal decisions
@@ -38,6 +41,58 @@ To install:
 - The factor extraction script requires `OPENAI_API_KEY` and `OPENAI_PROMPT_ID` in your environment
 - The citation and factor scripts support reprocessing through `REPROCESS=true`
 - Most script arguments should be passed after `--`, for example `npm run import:euipo -- sources/small-import.json`
+
+### Manual research CSV import
+
+Preview the supplied file:
+
+```bash
+npm run import:manual -- "/home/kaldisberzins/Downloads/Cases Manual Search Table-Table1.csv" --dry-run
+```
+
+Run the same command without `--dry-run` to write the import. If the report lists ambiguous matches, resolve those records first or add `--skip-conflicts` to import only the unambiguous rows. A conflict blocks the entire import by default and returns exit code 1, including during dry runs. `--validate-only` checks CSV formatting and field mappings without connecting to the database. The script prints a JSON report with proposed values, counts, warnings and conflicts; redirect stdout to save it.
+
+Matching normalizes court case numbers (Unicode hyphens, whitespace, leading zeros and appeal suffix formatting). An existing case keeps its ID and source key, so citations and decision links stay attached. With multiple records for a docket, a unique matching date is required; the importer never deletes or merges existing decision records. A missing `P` suffix requires an equal date. For a single exact case-number match, supplied manual dates can correct the existing date.
+
+Nonblank manual values override existing values and set `source` to `MANUAL`. Blank cells preserve existing data. The EUIPO importer, outcome synchronization and factor extraction scripts preserve manual records, including applying batches submitted before the manual import. Judgment text, text URLs and citation processing status are preserved; this importer does not download judgments or store research summaries as judgment text.
+
+Supported mappings:
+
+| CSV column | Database destination |
+| --- | --- |
+| Case Number, CJEU/GC, Date | `caseNumber`, `institution` (`CJEU` → `ECJ`, `GC` → `GC`), `date` |
+| eSearch/Curia Link, CJEU Procedure Type, Procedural Result | `url`, `decisionType`, `outcome` |
+| BF Outcome | `badFaithOutcome`: BF Found → CANCELLED; BF Not Found → REJECTED; Remitted → REMITTED; Partial → PARTIAL; Unclear → UNCLEAR |
+| Target Mark(s) | `trademarkName`, preserving the supplied text |
+| Link(s) to Mark(s) | `trademarkNumber` when exactly one supported EUIPO trademark link is supplied; leading zeros are preserved |
+| Legal Basis, Specific Provision | `Provision` / `DecisionProvision`; a nonblank unambiguous set replaces existing provision associations |
+| Conduct Tags, Relationship Tags, Doctrinal Tags, Inference Basis | `Factor` / `DecisionFactor`, replacing findings within each nonblank category |
+
+Factors reuse existing IDs when category and normalized label match. New labels create factors with deterministic `MANUAL_…` IDs; no synonym inference is performed. Existing evidence is retained for tags that remain selected. Empty tag categories preserve their current findings. All four supplied categories mark `factorsProcessed` true.
+
+Multiple trademark numbers cannot fit the single `trademarkNumber` field and are reported as omitted. Multiple legal instruments cannot be reliably paired with the article list, so those provision associations are preserved and the omission is reported. The importer uses existing `CTMR` and `EUTMR` provision codes for the corresponding CSV instruments; other instrument names become their provision codes.
+
+Columns without schema destinations (including ECLI, Short Name, mark types/images, Opinion, procedural winner, Standard of Review, Summary of Proceedings, Importance, Type of Case and Key Holding) are listed in `omittedColumns`. They are not stored. Rows missing both court and date are reported as incomplete and skipped. No schema migration is required.
+
+Run the importer regression tests with `node --import tsx/esm scripts/import_manual.test.ts`.
+
+### Enrich imported manual cases
+
+```bash
+npm run enrich:manual -- "/home/kaldisberzins/Downloads/Cases Manual Search Table-Table1.csv"
+npm run enrich:manual -- "/home/kaldisberzins/Downloads/Cases Manual Search Table-Table1.csv" --apply
+```
+
+The default is a read-only preview. Only existing, unambiguous `MANUAL` decisions matching the CSV are eligible. This command does not reimport metadata or resolve duplicate decision records. `--case "C-104/18 P"` restricts it to one case. Use `--stages texts,citations` or `--stages factors,appeals` to run selected stages.
+
+- **Texts:** downloads English EUR-Lex judgment PDFs or reads supplied HTML judgments using Playwright, checks the document header against the case number, and fills missing judgment text, text URL and language. Existing text is retained. Playwright Chromium must be installed (`npx playwright install chromium`).
+- **Citations:** extracts outgoing case references and resolves previously unresolved incoming citations across the database to the imported cases. A citation date can distinguish a judgment from an opinion sharing its docket; genuinely ambiguous matches remain unresolved. Ordinary `citations:populate` runs now also reconsider existing unresolved references.
+- **Factors:** uses `OPENAI_API_KEY` and the configured `OPENAI_MODEL` to select numbered passages from the judgment. The script copies supporting evidence directly from those source passages. Nonblank CSV categories remain authoritative; automated additions are allowed only in categories absent from the CSV. Invalid references are excluded and recorded in `rejectedEvidence` for review. Existing evidence is preserved, and empty evidence may be filled for manually selected tags. A reviewed judgment can yield no additional factors. Manual classifications without supporting passages are retained without fabricated evidence.
+- **Appeals:** extracts direct challenges in the judgment's own procedural history, checks quoted evidence and adjacent court/date direction, and creates `APPEAL` links from the reviewing decision to the challenged decision. Existing source-specific relationships can identify a duplicate export's original record. Existing `RELATED` links for the same directed pair are promoted when supported; reverse and skip-level legacy associations within the established chain are kept as `RELATED`. Preliminary references are not treated as appeals. Missing or ambiguous lower decisions remain external references, not invented database records. Intermediate steps require an identifiable source decision and evidence naming it. See `sample_queries/appeal_chain.sql` for a cycle-safe chain query.
+
+Factor and appeal stages call the OpenAI API and incur normal API usage charges. Validated extraction responses are cached under the ignored `.cache/manual-enrichment/` directory using hashes of the model, document, manual tags and factor catalog. Repeated runs reuse unchanged extractions. The command saves a dated JSON report including errors, counts and appeal evidence. Failed cases do not prevent other cases from being processed; an error exit code signals that a retry or review is needed. Changes are incremental; a successful text/citation stage remains saved if later factor extraction fails.
+
+Run enrichment regression tests with `node --import tsx/esm scripts/enrich_manual.test.ts`.
 
 ## Copy local database to VPS
 

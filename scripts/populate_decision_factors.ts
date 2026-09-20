@@ -279,7 +279,7 @@ async function loadTargetDecisions(limit?: number) {
       };
 
   return prisma.decision.findMany({
-    where: whereClause,
+    where: { ...whereClause, source: { not: "MANUAL" } },
     orderBy: { id: "asc" },
     ...(typeof limit === "number" ? { take: limit } : {}),
     select: {
@@ -437,7 +437,12 @@ async function applyDecisionFactors(
     evidence: tag.evidence,
   }));
 
-  await prisma.$transaction(async (tx) => {
+  return prisma.$transaction(async (tx) => {
+    // A manual import may have happened after this batch was submitted.
+    const decision = await tx.decision.findUniqueOrThrow({
+      where: { id: decisionId }, select: { source: true },
+    });
+    if (decision.source === "MANUAL") return null;
     await tx.decisionFactor.deleteMany({
       where: { decisionId },
     });
@@ -453,9 +458,8 @@ async function applyDecisionFactors(
       where: { id: decisionId },
       data: { factorsProcessed: true },
     });
+    return rows.length;
   });
-
-  return rows.length;
 }
 
 async function applyBatch(batchId: string) {
@@ -530,6 +534,10 @@ async function applyBatch(batchId: string) {
       const extracted = JSON.parse(rawText) as ExtractedResponse;
       const tags = validateAndNormalizeTags(extracted, factorMap);
       const count = await applyDecisionFactors(decision.id, tags);
+      if (count === null) {
+        console.log(`[SKIP] ${decision.caseNumber} - preserving manual factors`);
+        continue;
+      }
 
       success++;
       console.log(
