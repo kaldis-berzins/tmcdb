@@ -7,6 +7,7 @@ import mammoth from "mammoth";
 import WordExtractor from "word-extractor";
 import { PDFParse } from "pdf-parse";
 import { syncDecisionLinksForEntries } from "./sync_decision_links";
+import { normalizeCaseNumber } from "./import_manual";
 
 // Adjust this import to wherever your generated enums come from.
 // If you use @prisma/client, import from there instead.
@@ -280,6 +281,21 @@ async function upsertDecisionFromEntry(
   entry: EuipoEntry,
   context: BrowserContext
 ): Promise<{ id: string; sourceKey: string }> {
+  const normalizedCase = normalizeCaseNumber(entry.caseNumber);
+  const manualDecisions = await prisma.decision.findMany({
+    where: { source: SourceType.MANUAL },
+    select: { id: true, sourceKey: true, caseNumber: true, date: true },
+  });
+  const manual = manualDecisions.find((decision) =>
+    decision.sourceKey === entry.uniqueSolrKey ||
+    (normalizedCase && normalizeCaseNumber(decision.caseNumber) === normalizedCase) ||
+    (normalizedCase && normalizeCaseNumber(decision.caseNumber)?.replace(/ P$/, "") === normalizedCase.replace(/ P$/, "") &&
+      decision.date?.getTime() === parseEuipoDate(entry.date)?.getTime())
+  );
+  if (manual) {
+    console.log(`Preserving manual data for case ${entry.caseNumber}`);
+    return { id: manual.id, sourceKey: manual.sourceKey };
+  }
   const existing = await prisma.decision.findUnique({
     where: { sourceKey: entry.uniqueSolrKey },
     select: {

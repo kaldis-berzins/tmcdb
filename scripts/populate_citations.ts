@@ -1,9 +1,10 @@
 import "dotenv/config";
+import { pathToFileURL } from "node:url";
 import { prisma } from "../lib/prisma";
 
 const REPROCESS = process.env.REPROCESS === "true";
 
-type TargetDecision = {
+export type TargetDecision = {
   id: string;
   sourceKey: string;
   caseNumber: string;
@@ -22,6 +23,7 @@ type CitationRow = {
   citedReference: string | null;
   text: string;
 };
+export type DecisionLookup = Map<string, Set<string>> & { dates?: Map<string, string> };
 
 const CITATION_PATTERNS = [
   /\b(?:Joined\s+Cases?\s+|Case\s+)?[CTFctf]\s*[-\u2010-\u2015]?\s*\d{1,4}\s*\/\s*\d{2,4}(?:\s+P(?:PU)?)?\b/g,
@@ -62,7 +64,7 @@ function normalizeWhitespace(value: string): string {
   return value.replace(/[\u00a0\u2007\u202f]/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function normalizeCaseReference(value: string): string {
+export function normalizeCaseReference(value: string): string {
   let normalized = value.toUpperCase();
   normalized = normalized.replace(/[\u00ad]/g, "");
   normalized = normalized.replace(/[\u2010-\u2015\u2212]/g, "-");
@@ -92,7 +94,8 @@ function normalizeCaseReference(value: string): string {
     normalized = `R ${boardMatch[1]}`;
   }
 
-  return normalized;
+  return normalized.replace(/^([CTF]-|R\s*)0+(?=\d)/, "$1")
+    .replace(/\/(?:19|20)(\d{2})(?=\s|$)/, "/$1");
 }
 
 function buildReferenceVariants(value: string): string[] {
@@ -120,7 +123,7 @@ function splitIntoSnippets(text: string): string[] {
     .filter(Boolean);
 }
 
-function extractCandidates(text: string): CitationCandidate[] {
+export function extractCandidates(text: string): CitationCandidate[] {
   const candidates: CitationCandidate[] = [];
   const seen = new Set<string>();
 
@@ -173,17 +176,20 @@ async function loadTargetDecisions(limit?: number): Promise<TargetDecision[]> {
   });
 }
 
-async function loadDecisionLookup() {
+export async function loadDecisionLookup(): Promise<DecisionLookup> {
   const decisions = await prisma.decision.findMany({
     select: {
       id: true,
       caseNumber: true,
+      date: true,
     },
   });
 
-  const lookup = new Map<string, Set<string>>();
+  const lookup: DecisionLookup = new Map();
+  lookup.dates = new Map();
 
   for (const decision of decisions) {
+    if (decision.date) lookup.dates.set(decision.id, decision.date.toISOString().slice(0, 10));
     for (const variant of buildReferenceVariants(decision.caseNumber)) {
       const existing = lookup.get(variant) ?? new Set<string>();
       existing.add(decision.id);
@@ -194,10 +200,11 @@ async function loadDecisionLookup() {
   return lookup;
 }
 
-function resolveDecisionIds(
+export function resolveDecisionIds(
   rawReference: string,
   citingDecisionId: string,
-  lookup: Map<string, Set<string>>
+  lookup: DecisionLookup,
+  snippet?: string
 ): string[] {
   const resolved = new Set<string>();
 
@@ -209,10 +216,30 @@ function resolveDecisionIds(
     }
   }
 
+  // Older EUIPO references often omit the Court of Justice appeal suffix.
+  // Only the caller can accept the result when the docket resolves uniquely.
+  if (!resolved.size) {
+    const normalized = normalizeCaseReference(rawReference);
+    if (/^C-\d+\/\d{2}(?: P)?$/.test(normalized)) {
+      const alias = normalized.endsWith(" P") ? normalized.slice(0, -2) : `${normalized} P`;
+      for (const id of lookup.get(alias) ?? []) if (id !== citingDecisionId) resolved.add(id);
+    }
+  }
+
+  if (resolved.size > 1 && snippet && lookup.dates) {
+    const dates = new Set<string>();
+    const pad = (value: string) => value.padStart(2, "0");
+    for (const match of snippet.matchAll(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/g)) dates.add(`${match[3]}-${pad(match[2]!)}-${pad(match[1]!)}`);
+    const months = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+    for (const match of snippet.matchAll(/\b(\d{1,2})\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{4})\b/gi)) dates.add(`${match[3]}-${pad(String(months.indexOf(match[2]!.toLowerCase()) + 1))}-${pad(match[1]!)}`);
+    const dated = [...resolved].filter((id) => dates.has(lookup.dates!.get(id) ?? ""));
+    if (dated.length === 1) return dated;
+  }
   return [...resolved];
 }
 
 function isSelfReference(decision: TargetDecision, rawReference: string): boolean {
+  if (normalizeCaseReference(decision.caseNumber).replace(/ P$/, "") === normalizeCaseReference(rawReference).replace(/ P$/, "")) return true;
   const decisionVariants = new Set(buildReferenceVariants(decision.caseNumber));
 
   for (const variant of buildReferenceVariants(rawReference)) {
@@ -224,9 +251,9 @@ function isSelfReference(decision: TargetDecision, rawReference: string): boolea
   return false;
 }
 
-function toCitationRows(
+export function toCitationRows(
   decision: TargetDecision,
-  lookup: Map<string, Set<string>>
+  lookup: DecisionLookup
 ): CitationRow[] {
   if (!decision.text || !decision.text.trim()) {
     return [];
@@ -243,7 +270,8 @@ function toCitationRows(
     const matches = resolveDecisionIds(
       candidate.rawReference,
       decision.id,
-      lookup
+      lookup,
+      candidate.snippet
     );
 
     const citedDecisionId = matches.length === 1 ? matches[0] ?? null : null;
@@ -267,7 +295,7 @@ function toCitationRows(
   return rows;
 }
 
-async function applyDecisionCitations(decisionId: string, rows: CitationRow[]) {
+export async function applyDecisionCitations(decisionId: string, rows: CitationRow[]) {
   await prisma.$transaction(async (tx) => {
     await tx.citation.deleteMany({
       where: { citingDecisionId: decisionId },
@@ -284,6 +312,23 @@ async function applyDecisionCitations(decisionId: string, rows: CitationRow[]) {
       data: { citationsProcessed: true },
     });
   });
+}
+
+export async function backfillCitations(targetIds?: string[]): Promise<number> {
+  const lookup = await loadDecisionLookup();
+  const unresolved = await prisma.citation.findMany({
+    where: { citedDecisionId: null, citedReference: { not: null } },
+    select: { id: true, citingDecisionId: true, citedReference: true, text: true },
+  });
+  let updated = 0;
+  for (const citation of unresolved) {
+    const matches = resolveDecisionIds(citation.citedReference!, citation.citingDecisionId, lookup, citation.text);
+    if (matches.length !== 1 || (targetIds && !targetIds.includes(matches[0]!))) continue;
+    updated += (await prisma.citation.updateMany({
+      where: { id: citation.id, citedDecisionId: null }, data: { citedDecisionId: matches[0]! },
+    })).count;
+  }
+  return updated;
 }
 
 async function main() {
@@ -322,9 +367,10 @@ async function main() {
   console.log(
     `Finished citation backfill. Processed=${processed}, Extracted=${extracted}, Resolved=${resolved}, Unresolved=${unresolved}`
   );
+  console.log(`Previously unresolved citations linked: ${await backfillCitations()}`);
 }
 
-main()
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main()
   .then(async () => {
     await prisma.$disconnect();
   })

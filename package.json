@@ -7,6 +7,8 @@
   "scripts": {
     "migrate": "prisma migrate dev && prisma generate",
     "import:euipo": "node --import tsx/esm scripts/import.ts",
+    "import:manual": "node --import tsx/esm scripts/import_manual.ts",
+    "enrich:manual": "node --import tsx/esm scripts/enrich_manual.ts",
     "link:decisions": "node --import tsx/esm scripts/sync_decision_links.ts",
     "texts:retry-missing": "node --import tsx/esm scripts/fetch_missing_decision_texts.ts",
     "outcomes:sync": "node --import tsx/esm scripts/fix_outcome.ts",
