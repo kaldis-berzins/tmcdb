@@ -1,8 +1,9 @@
 // src/lib/server/sql.ts
-import { prisma } from '../../../lib/prisma';
+import { withReadOnlyTransaction, QueryValidationError } from './read-only';
 import { serializeRows } from './sql-serialization';
 
 const FORBIDDEN_SQL = [
+  /\bset_config\b/i,
   /\binsert\b/i,
   /\bupdate\b/i,
   /\bdelete\b/i,
@@ -129,7 +130,7 @@ export function validateReadOnlySql(sql: string) {
   const trimmed = sql.trim();
 
   if (!trimmed) {
-    throw new Error('SQL query is empty.');
+    throw new QueryValidationError('SQL query is empty.');
   }
 
   const sanitizedSql = stripSqlCommentsAndQuotedContent(trimmed);
@@ -139,7 +140,7 @@ export function validateReadOnlySql(sql: string) {
   if (sanitizedSql.includes(';')) {
     const withoutFinalSemicolon = sanitizedSql.replace(/;\s*$/, '');
     if (withoutFinalSemicolon.includes(';')) {
-      throw new Error('Only one SQL statement is allowed.');
+      throw new QueryValidationError('Only one SQL statement is allowed.');
     }
   }
 
@@ -147,12 +148,12 @@ export function validateReadOnlySql(sql: string) {
   const normalizedSanitized = sanitizedSql.replace(/;\s*$/, '').trim();
 
   if (!/^(select|with)\b/i.test(normalizedSanitized)) {
-    throw new Error('Only SELECT or WITH queries are allowed.');
+    throw new QueryValidationError('Only SELECT or WITH queries are allowed.');
   }
 
   for (const pattern of FORBIDDEN_SQL) {
     if (pattern.test(normalizedSanitized)) {
-      throw new Error(`Forbidden SQL keyword detected: ${pattern}`);
+      throw new QueryValidationError(`Forbidden SQL keyword detected: ${pattern}`);
     }
   }
 
@@ -161,6 +162,7 @@ export function validateReadOnlySql(sql: string) {
 
 export async function runReadOnlySql(sql: string, maxRows = 100) {
   const validatedSql = validateReadOnlySql(sql);
+  const limit = Number.isFinite(maxRows) ? Math.min(Math.max(Math.floor(maxRows), 1), 500) : 100;
 
   // Wrap the user/model query so the outer query enforces the final row limit.
   // This avoids relying entirely on the model to remember LIMIT.
@@ -169,18 +171,14 @@ export async function runReadOnlySql(sql: string, maxRows = 100) {
     FROM (
       ${validatedSql}
     ) AS llm_query_result
-    LIMIT ${Math.min(Math.max(maxRows, 1), 500)}
+    LIMIT ${limit + 1}
   `;
 
-  const rows = await prisma.$transaction(async (tx) => {
-    // Prevent long-running queries.
-    await tx.$executeRawUnsafe(`SET LOCAL statement_timeout = '10s'`);
-
-    // Make the transaction read-only at the database level.
-    await tx.$executeRawUnsafe(`SET TRANSACTION READ ONLY`);
-
-    return tx.$queryRawUnsafe<unknown[]>(wrappedSql);
-  });
-
-  return serializeRows(rows);
+  const rows = await withReadOnlyTransaction((tx) => tx.$queryRawUnsafe<unknown[]>(wrappedSql));
+  return {
+    rows: serializeRows(rows.slice(0, limit)), rowCount: Math.min(rows.length, limit),
+    truncated: rows.length > limit,
+    completeness: 'unknown' as const,
+    limitation: 'This is a SQL result, not a completeness guarantee. The query may contain its own LIMIT.'
+  };
 }

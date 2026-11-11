@@ -22,7 +22,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "check": "svelte-check --tsconfig ./tsconfig.json",
-    "check:watch": "svelte-check --tsconfig ./tsconfig.json --watch"
+    "check:watch": "svelte-check --tsconfig ./tsconfig.json --watch",
+    "citations:audit": "node --import tsx/esm scripts/audit_citations.ts",
+    "citations:verify": "node --import tsx/esm scripts/verify_citation_search.ts"
   },
   "author": "Kaldis Berzins",
   "license": "ISC",

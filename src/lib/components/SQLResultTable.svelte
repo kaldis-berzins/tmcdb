@@ -14,7 +14,7 @@
   }
 
   function orderColumns(columns: string[]) {
-    const displayColumns = columns.filter((column) => columnKey(column) !== 'sourcekey');
+    const displayColumns = columns;
     const priorityGroups = [
       ['url', 'decisionurl'],
       ['trademarkname'],

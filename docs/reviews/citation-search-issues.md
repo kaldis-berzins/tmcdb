@@ -1,11 +1,13 @@
 # Citation search issues and recommended fixes
 
+Implementation completed on 11 November 2026. See [implementation, data repair and validation notes](citation-search-implementation.md). The findings below record the pre-implementation review.
+
 ## Evidence and scope
 
 - **Raimund:** the assistant returned one Brauwelt citation, then 310 broadly matched citation rows, encountered a transaction timeout, and concluded that only one decision matched.
 - **CeramTec:** the assistant made 10 SQL calls: one timeout, seven empty results, a 72-row broad text search, and a 16-row reference aggregate. The supplied output ends without a final explanation.
 - Findings below distinguish defects visible in the transcripts or code from causes that still require verification. Actual matching decision counts, database coverage, and execution plans have not been verified against the live database.
-- These are implementation recommendations. No application or database changes have been made. File paths below are relative to the repository root.
+- These were the implementation recommendations at review time. File paths below are relative to the repository root.
 
 ## 1. Resolve the case before searching for citations
 

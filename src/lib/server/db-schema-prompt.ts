@@ -9,7 +9,7 @@ Important:
 - Columns like "sourceKey", "caseNumber", "badFaithOutcome" must be quoted.
 - Generate read-only SQL only.
 - Prefer LIMIT 50 unless the user explicitly asks for counts or aggregates.
-- For text search, use ILIKE.
+- For general text discovery, use ILIKE. Incoming citation searches use resolveCase and findCitingDecisions; never use wildcard fragments to identify a cited authority.
 - Dates are stored in "Decision"."date".
 - If joining factor data, use "DecisionFactor" and "Factor".
 - If joining provision data, use "DecisionProvision" and "Provision".
@@ -22,7 +22,7 @@ Important:
 - Seed appeal-chain queries with a specific decision ID or the manual judgment, not every record sharing a docket number: an Advocate General opinion can share the judgment's case number.
 - For citation queries, "Citation"."citingDecisionId" is the decision doing the citing and "Citation"."citedDecisionId" is the decision being cited.
 - Resolved citations use "citedDecisionId"; unresolved citation strings are stored in "citedReference".
-- If an incoming citation search returns no rows, also search other decisions' "text" for the target's party name and case number before concluding. Account for Unicode dashes and spaces in docket references, and exclude the target decision itself. Search by ECLI or CELEX only when that identifier is known from the data.
+- The dedicated citation service handles exact identifiers, full-text fallback, ambiguity, deduplication, evidence and pagination. Do not replace it with broad name searches or searches of the cited decision's text.
 - Treat full-text matches as possible mentions requiring context review, not automatically as established citations. Check missing texts and "citationsProcessed" when explaining coverage; a processed flag does not guarantee every citation was extracted.
 - State negative citation findings as limited to the stored collection and the searches performed. Distinguish citations made by the target (outgoing) from decisions citing it (incoming); enrichment totals across cases do not imply every case has incoming citations.
 - For "most cited" questions, usually count DISTINCT "citingDecisionId" to avoid overcounting repeated mentions within one decision.
@@ -173,7 +173,7 @@ WHERE d."text" ILIKE '%intention to block%'
 ORDER BY d."date" DESC
 LIMIT 20
 
-Find decisions that cite a specific case:
+For incoming citations, use resolveCase and findCitingDecisions. The following resolved-only SQL is illustrative and incomplete; it omits unresolved citations and must not be used to answer an incoming citation search:
 
 SELECT DISTINCT
   d."sourceKey",

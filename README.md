@@ -190,3 +190,29 @@ docker compose exec -T db \
 
 docker compose up -d tmcdb
 ```
+
+## Citation search and audit
+
+Incoming citation questions use a dedicated authority resolver and search service. Ambiguous names require selection; unknown names require a complete case number or ECLI. Results distinguish verified document citations from uncertain docket mentions, show evidence, and support continuation without changing the selected authority. See [implementation and validation notes](docs/reviews/citation-search-implementation.md).
+
+Preview citation link repairs and newly discovered references:
+
+```bash
+npm run citations:audit -- --report .cache/citation-audit/review.json
+```
+
+After reviewing that report, apply exactly its proposed changes:
+
+```bash
+npm run citations:audit -- --apply .cache/citation-audit/review.json
+```
+
+The repair preserves existing passages and checks for intervening changes. It commits one decision at a time and records progress beside the report; rerunning an applied report skips already completed repairs. Keep the report, which contains prior link values. A fresh audit should propose no further changes.
+
+Read-only integration checks and query plans:
+
+```bash
+npm run citations:verify -- --timeouts --all-pages
+```
+
+This uses the configured database, runs deliberate six- and eleven-second test queries, verifies read-only execution, and saves results under `.cache/citation-audit/`. The normal search budgets can be configured with `SQL_STATEMENT_TIMEOUT_MS` and `SQL_TRANSACTION_TIMEOUT_MS`.

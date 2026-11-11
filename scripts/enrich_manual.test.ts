@@ -4,11 +4,11 @@ import { filterEnrichment, findReference, groundPassageSelections, judgmentPassa
 import { normalizeCaseReference, resolveDecisionIds, toCitationRows } from "./populate_citations";
 import type { DecisionLookup } from "./populate_citations";
 
-test("citation normalization and missing appeal suffix resolve uniquely", () => {
+test("citation normalization preserves meaningful appeal suffixes", () => {
   assert.equal(normalizeCaseReference("Case C‑00529 / 2007"), "C-529/07");
   const lookup = new Map([["C-104/18 P", new Set(["koton"])]]);
-  assert.deepEqual(resolveDecisionIds("C-104/18", "other", lookup), ["koton"]);
-  assert.equal(toCitationRows({ id: "koton", sourceKey: "key", caseNumber: "C-104/18 P", text: "In Case C-104/18. Judgment in Case C-529/07." }, lookup).length, 1);
+  assert.deepEqual(resolveDecisionIds("C-104/18", "other", lookup), []);
+  assert.equal(toCitationRows({ id: "koton", sourceKey: "key", caseNumber: "C-104/18 P", text: "In Case C-104/18 P. Judgment in Case C-529/07." }, lookup).length, 1);
 });
 
 test("duplicate cited decisions remain unresolved", () => {
@@ -21,7 +21,7 @@ test("dated citations distinguish a judgment from an opinion in the same docket"
   const lookup: DecisionLookup = new Map([["C-104/18 P", new Set(["judgment", "opinion"])]]);
   lookup.dates = new Map([["judgment", "2019-09-12"], ["opinion", "2019-04-04"]]);
   assert.deepEqual(resolveDecisionIds("C-104/18 P", "other", lookup, "Judgment of 12 September 2019, C-104/18 P"), ["judgment"]);
-  assert.deepEqual(resolveDecisionIds("C-104/18", "other", lookup, "Opinion of 04/04/2019 in C-104/18 P"), ["opinion"]);
+  assert.deepEqual(resolveDecisionIds("C-104/18 P", "other", lookup, "Opinion of 04/04/2019 in C-104/18 P"), ["opinion"]);
   assert.equal(resolveDecisionIds("C-104/18 P", "other", lookup).length, 2);
 });
 

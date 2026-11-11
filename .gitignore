@@ -7,3 +7,5 @@ backups/
 data/
 .cache/manual-enrichment/
 build/
+
+.cache/citation-audit/

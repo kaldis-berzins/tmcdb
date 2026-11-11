@@ -5,6 +5,17 @@
   import MarkdownText from '$lib/components/MarkdownText.svelte';
   import SqlResultTable from '../lib/components/SQLResultTable.svelte';
 
+  import CitationSearchResults from '../lib/components/CitationSearchResults.svelte';
+  import type { CitationSearchResult, CaseResolution, Authority } from '../lib/citations/types';
+
+  function dataPart(part: unknown): { type: string; data: unknown } | undefined {
+    return part && typeof part === 'object' && 'type' in part && 'data' in part ? part as { type: string; data: unknown } : undefined;
+  }
+  function chooseAuthority(authority: Authority) {
+    interrupted = false;
+    chat.sendMessage({ text: `Use ${authority.title} (${authority.caseNumber ?? ''}; ${authority.ecli ?? ''}) as the intended authority for my previous citation search.` });
+  }
+
   type SqlRow = Record<string, unknown>;
 
   type RunSqlOutput = {
@@ -13,6 +24,8 @@
     columns?: string[];
     rows?: SqlRow[];
     error?: string;
+    truncated?: boolean;
+    limitation?: string;
   };
 
   type RunSqlToolPart = {
@@ -50,11 +63,13 @@
   });
 
   let input = $state('');
+  let interrupted = $state(false);
 
   function submit() {
     const text = input.trim();
     if (!text) return;
 
+    interrupted = false;
     chat.sendMessage({ text });
     input = '';
   }
@@ -73,7 +88,7 @@
 <div class="chat-shell">
   <header>
     <h1>TMCDB</h1>
-    <p>Ask natural-language questions. The assistant will generate SQL and query the database.</p>
+    <p>Search decisions, verify citations, and explore the trademark cancellation database.</p>
   </header>
 
   <main class="messages">
@@ -89,8 +104,21 @@
               {:else}
                 <p>{part.text}</p>
               {/if}
+            {:else if dataPart(part)?.type === 'data-citation-result'}
+              <CitationSearchResults result={dataPart(part)!.data as CitationSearchResult} />
+            {:else if dataPart(part)?.type === 'data-case-resolution'}
+              {@const resolution = dataPart(part)!.data as CaseResolution}
+              {#if resolution.status !== 'resolved'}
+                <p>{resolution.explanation}</p>
+                {#each resolution.candidates as authority}
+                  <button type="button" disabled={chat.status === 'streaming' || chat.status === 'submitted'} onclick={() => chooseAuthority(authority)}>{authority.title} · {authority.caseNumber}</button>
+                {/each}
+              {/if}
+            {:else if dataPart(part)?.type === 'data-search-status'}
+              {@const status = dataPart(part)!.data as { message: string; status: string }}
+              <details class="sql-details"><summary>Search status: {status.status}</summary><p>{status.message}</p></details>
             {:else if isRunSqlPart(part)}
-              <div class="tool-result">
+              <details class="tool-result"><summary>Exploratory SQL result</summary>
                 {#if part.input?.sql}
                   <details class="sql-details">
                     <summary>SQL query</summary>
@@ -106,6 +134,8 @@
                   {#if output?.ok}
                     {@const rows = getRows(output)}
 
+                    {#if output.truncated}<p>Output truncated at {output.rowCount} rows.</p>{/if}
+                    <p class="tool-status">{output.limitation ?? 'Exploratory result; completeness is not established.'}</p>
                     <SqlResultTable
                       rows={rows}
                       columns={getColumns(output)}
@@ -121,7 +151,7 @@
                     SQL tool error: {part.errorText?.trim() || 'Unknown SQL tool error'}
                   </div>
                 {/if}
-              </div>
+              </details>
             {/if}
           {/each}
         </div>
@@ -137,9 +167,13 @@
       </article>
     {/if}
 
+    {#if interrupted && chat.status !== 'streaming' && chat.status !== 'submitted'}
+      <p role="status">Response stopped. Displayed results remain available; search completion is unconfirmed. Use Continue search where available.</p>
+    {/if}
+
     {#if chat.error}
       <div class="error">
-        {chat.error.message?.trim() || 'Unable to complete the response. Please try again.'}
+        {chat.error.message?.trim() || 'Unable to complete the response. Please try again.'} Any displayed results remain usable; search completion is unconfirmed.
       </div>
     {/if}
   </main>
@@ -164,7 +198,7 @@
     </button>
 
     {#if chat.status === 'streaming'}
-      <button type="button" onclick={() => chat.stop()}>
+      <button type="button" onclick={() => { interrupted = true; chat.stop(); }}>
         Stop
       </button>
     {/if}
